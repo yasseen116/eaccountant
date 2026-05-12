@@ -11,7 +11,7 @@ public class ItemController {
     private final ItemRepository itemRepository;
     private final ProductCategoryRepository categoryRepository;
 
-    // Inject repositories needed by this controller.
+    // Injects repositories needed by this controller.
     public ItemController(ItemRepository itemRepository,
                           ProductCategoryRepository categoryRepository) {
         this.itemRepository = itemRepository;
@@ -54,9 +54,9 @@ public class ItemController {
         item.setItemName(request.itemName());
         item.setProductCategory(category);
         item.setVariation(request.variation());
-        item.setFbaMinStock(request.fbaMinStock());
         item.setLocalMinStock(request.localMinStock());
-        item.setFbaTargetStock(request.fbaTargetStock());
+        item.setFulfillmentMinStock(request.fulfillmentMinStock());
+        item.setFulfillmentTargetStock(request.fulfillmentTargetStock());
         item.setActive(request.active());
 
         Item savedItem = itemRepository.save(item);
@@ -78,9 +78,9 @@ public class ItemController {
         item.setItemName(request.itemName());
         item.setProductCategory(category);
         item.setVariation(request.variation());
-        item.setFbaMinStock(request.fbaMinStock());
         item.setLocalMinStock(request.localMinStock());
-        item.setFbaTargetStock(request.fbaTargetStock());
+        item.setFulfillmentMinStock(request.fulfillmentMinStock());
+        item.setFulfillmentTargetStock(request.fulfillmentTargetStock());
         item.setActive(request.active());
 
         Item savedItem = itemRepository.save(item);
@@ -126,11 +126,15 @@ public class ItemController {
             throw new RuntimeException("Product category is required");
         }
 
-        if (request.fbaMinStock() < 0 || request.localMinStock() < 0 || request.fbaTargetStock() < 0) {
+        if (request.localMinStock() < 0 ||
+                request.fulfillmentMinStock() < 0 ||
+                request.fulfillmentTargetStock() < 0) {
             throw new RuntimeException("Stock thresholds must be zero or positive");
         }
 
-
+        if (request.fulfillmentTargetStock() < request.fulfillmentMinStock()) {
+            throw new RuntimeException("Fulfillment target stock cannot be less than fulfillment minimum stock");
+        }
     }
 
     // Converts Item entity to ItemResponse DTO.
@@ -141,9 +145,9 @@ public class ItemController {
                 item.getProductCategory().getId(),
                 item.getProductCategory().getName(),
                 item.getVariation(),
-                item.getFbaMinStock(),
                 item.getLocalMinStock(),
-                item.getFbaTargetStock(),
+                item.getFulfillmentMinStock(),
+                item.getFulfillmentTargetStock(),
                 item.isActive()
         );
     }

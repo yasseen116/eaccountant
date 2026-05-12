@@ -4,91 +4,95 @@ import jakarta.persistence.*;
 
 @Entity
 public class Item {
+
+    // Auto-generated primary key for each item.
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private String ItemName;
 
+    // Main item name shown in the system.
+    private String itemName;
+
+    // Many items can belong to one category.
     @ManyToOne
-    private ProductCategory ProductCategory;
+    private ProductCategory productCategory;
 
+    // Variation such as Silver, Black, or Design A.
+    private String variation;
 
-    public String getVariation() {
-        return variation;
-    }
+    // Minimum local stock before showing an alert.
+    private int localMinStock;
 
-    public void setVariation(String variation) {
-        this.variation = variation;
-    }
+    // Minimum fulfillment stock before showing an alert.
+    private int fulfillmentMinStock;
+
+    // Target fulfillment stock used for transfer recommendation.
+    private int fulfillmentTargetStock;
+
+    // Used to hide items without deleting old movement history.
+    private boolean active = true;
 
     public Long getId() {
         return id;
     }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
-
     public String getItemName() {
-        return ItemName;
-    }
-
-    public void setItemName(String itemName) {
-        ItemName = itemName;
+        return itemName;
     }
 
     public ProductCategory getProductCategory() {
-        return ProductCategory;
+        return productCategory;
     }
 
-    public void setProductCategory(ProductCategory productCategory) {
-        ProductCategory = productCategory;
-    }
-
-    public int getFbaMinStock() {
-        return fbaMinStock;
-    }
-
-    public void setFbaMinStock(int fbaMinStock) {
-        this.fbaMinStock = fbaMinStock;
+    public String getVariation() {
+        return variation;
     }
 
     public int getLocalMinStock() {
         return localMinStock;
     }
 
-    public void setLocalMinStock(int localMinStock) {
-        this.localMinStock = localMinStock;
+    public int getFulfillmentMinStock() {
+        return fulfillmentMinStock;
     }
 
-    public int getFbaTargetStock() {
-        return fbaTargetStock;
-    }
-
-    public void setFbaTargetStock(int fbaTargetStock) {
-        this.fbaTargetStock = fbaTargetStock;
+    public int getFulfillmentTargetStock() {
+        return fulfillmentTargetStock;
     }
 
     public boolean isActive() {
         return active;
     }
 
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public void setItemName(String itemName) {
+        this.itemName = itemName;
+    }
+
+    public void setProductCategory(ProductCategory productCategory) {
+        this.productCategory = productCategory;
+    }
+
+    public void setVariation(String variation) {
+        this.variation = variation;
+    }
+
+    public void setLocalMinStock(int localMinStock) {
+        this.localMinStock = localMinStock;
+    }
+
+    public void setFulfillmentMinStock(int fulfillmentMinStock) {
+        this.fulfillmentMinStock = fulfillmentMinStock;
+    }
+
+    public void setFulfillmentTargetStock(int fulfillmentTargetStock) {
+        this.fulfillmentTargetStock = fulfillmentTargetStock;
+    }
+
     public void setActive(boolean active) {
         this.active = active;
     }
-
-    // Variation such as Silver, Black, or Design A.
-    private String variation;
-
-    // Minimum FBA stock before showing an alert.
-    private int fbaMinStock;
-
-    // Minimum local stock before showing an alert.
-    private int localMinStock;
-
-    // Target FBA stock used for send-to-FBA recommendation.
-    private int fbaTargetStock;
-
-    // Used to hide items without deleting old movement history.
-    private boolean active = true;
 }

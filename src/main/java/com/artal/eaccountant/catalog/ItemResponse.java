@@ -7,9 +7,9 @@ public record ItemResponse(
         Long productCategoryId,
         String productCategoryName,
         String variation,
-        int fbaMinStock,
         int localMinStock,
-        int fbaTargetStock,
+        int fulfillmentMinStock,
+        int fulfillmentTargetStock,
         boolean active
 ) {
 }
