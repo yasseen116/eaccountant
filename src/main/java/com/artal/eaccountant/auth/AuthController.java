@@ -1,44 +1,83 @@
 package com.artal.eaccountant.auth;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-// Handles login, logout, and current user endpoints.
 @RestController
 public class AuthController {
 
-    private final AuthService authService;
+    private final UserAccountRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    // Injects auth service.
-    public AuthController(AuthService authService) {
-        this.authService = authService;
+    public AuthController(UserAccountRepository userRepository,
+                          PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
-    // Logs in user and returns token.
     @PostMapping("/login")
-    public LoginResponse login(@RequestBody LoginRequest request) {
-        return authService.login(request);
-    }
+    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request,
+                                               HttpServletRequest httpRequest) {
+        UserAccount user = userRepository.findByEmail(request.email())
+                .orElseThrow(() -> new RuntimeException("Invalid email or password"));
 
-    // Logs out user by removing token.
-    @PostMapping("/logout")
-    public void logout(@RequestHeader("Authorization") String authorizationHeader) {
-        String token = extractToken(authorizationHeader);
-        authService.logout(token);
-    }
-
-    // Returns current logged-in user.
-    @GetMapping("/me")
-    public MeResponse me(@RequestHeader("Authorization") String authorizationHeader) {
-        String token = extractToken(authorizationHeader);
-        return authService.me(token);
-    }
-
-    // Extracts token from Authorization header.
-    private String extractToken(String authorizationHeader) {
-        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
-            throw new RuntimeException("Invalid authorization header");
+        if (!user.isActive()) {
+            throw new RuntimeException("User account is inactive");
         }
 
-        return authorizationHeader.substring(7);
+        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+            throw new RuntimeException("Invalid email or password");
+        }
+
+        HttpSession session = httpRequest.getSession(true);
+        session.setAttribute("USER_ID", user.getId());
+
+        UserResponse userResponse = new UserResponse(
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getRole(),
+                user.isActive()
+        );
+
+        return ResponseEntity.ok(
+                new LoginResponse("Login successful", userResponse)
+        );
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+
+        if (session != null) {
+            session.invalidate();
+        }
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/me")
+    public UserResponse me(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+
+        if (session == null || session.getAttribute("USER_ID") == null) {
+            throw new RuntimeException("Not logged in");
+        }
+
+        Long userId = (Long) session.getAttribute("USER_ID");
+
+        UserAccount user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return new UserResponse(
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getRole(),
+                user.isActive()
+        );
     }
 }
