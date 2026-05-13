@@ -1,8 +1,13 @@
 package com.artal.eaccountant.auth;
 
+import com.artal.eaccountant.common.SessionAuthenticationFilter;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,7 +26,12 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request,
                                                HttpServletRequest httpRequest) {
-        UserAccount user = userRepository.findByEmail(request.email())
+        if (request.email() == null || request.email().isBlank() ||
+                request.password() == null || request.password().isBlank()) {
+            throw new RuntimeException("Email and password are required");
+        }
+
+        UserAccount user = userRepository.findByEmail(request.email().trim().toLowerCase())
                 .orElseThrow(() -> new RuntimeException("Invalid email or password"));
 
         if (!user.isActive()) {
@@ -33,7 +43,8 @@ public class AuthController {
         }
 
         HttpSession session = httpRequest.getSession(true);
-        session.setAttribute("USER_ID", user.getId());
+        httpRequest.changeSessionId();
+        session.setAttribute(SessionAuthenticationFilter.USER_ID_SESSION_ATTRIBUTE, user.getId());
 
         UserResponse userResponse = new UserResponse(
                 user.getId(),
@@ -49,12 +60,24 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(HttpServletRequest request) {
+    public ResponseEntity<Void> logout(HttpServletRequest request,
+                                       HttpServletResponse response) {
         HttpSession session = request.getSession(false);
 
         if (session != null) {
             session.invalidate();
         }
+
+        SecurityContextHolder.clearContext();
+
+        ResponseCookie expiredSessionCookie = ResponseCookie.from("JSESSIONID", "")
+                .path("/")
+                .maxAge(0)
+                .httpOnly(true)
+                .sameSite("Lax")
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, expiredSessionCookie.toString());
 
         return ResponseEntity.noContent().build();
     }
@@ -63,11 +86,11 @@ public class AuthController {
     public UserResponse me(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
 
-        if (session == null || session.getAttribute("USER_ID") == null) {
+        if (session == null || session.getAttribute(SessionAuthenticationFilter.USER_ID_SESSION_ATTRIBUTE) == null) {
             throw new RuntimeException("Not logged in");
         }
 
-        Long userId = (Long) session.getAttribute("USER_ID");
+        Long userId = (Long) session.getAttribute(SessionAuthenticationFilter.USER_ID_SESSION_ATTRIBUTE);
 
         UserAccount user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
