@@ -3,6 +3,7 @@ package com.artal.eaccountant.stock.strategy;
 import com.artal.eaccountant.stock.MovementRequest;
 import com.artal.eaccountant.stock.MovementType;
 import com.artal.eaccountant.stock.StockLocation;
+import com.artal.eaccountant.stock.StockMovement;
 
 public interface StockMovementStrategy {
 
@@ -10,5 +11,5 @@ public interface StockMovementStrategy {
 
     StockLocation resolveLocation(MovementRequest request);
 
-    StockEffect calculateEffect(int quantity);
+    StockEffect calculateEffect(StockMovement movement);
 }

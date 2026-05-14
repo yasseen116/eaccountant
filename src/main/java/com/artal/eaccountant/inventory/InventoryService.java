@@ -2,107 +2,70 @@ package com.artal.eaccountant.inventory;
 
 import com.artal.eaccountant.catalog.Item;
 import com.artal.eaccountant.catalog.ItemRepository;
-import com.artal.eaccountant.stock.MovementType;
-import com.artal.eaccountant.stock.StockLocation;
+import com.artal.eaccountant.inventory.specification.RestockStatusResolver;
 import com.artal.eaccountant.stock.StockMovement;
 import com.artal.eaccountant.stock.StockMovementRepository;
+import com.artal.eaccountant.stock.strategy.StockEffect;
+import com.artal.eaccountant.stock.strategy.StockMovementStrategy;
+import com.artal.eaccountant.stock.strategy.StockMovementStrategyFactory;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 
-// Calculates inventory from stock movements.
 @Service
 public class InventoryService {
 
     private final ItemRepository itemRepository;
     private final StockMovementRepository movementRepository;
+    private final StockMovementStrategyFactory strategyFactory;
+    private final RestockStatusResolver restockStatusResolver;
 
-    // Injects repositories needed for inventory calculation.
     public InventoryService(ItemRepository itemRepository,
-                            StockMovementRepository movementRepository) {
+                            StockMovementRepository movementRepository,
+                            StockMovementStrategyFactory strategyFactory,
+                            RestockStatusResolver restockStatusResolver) {
         this.itemRepository = itemRepository;
         this.movementRepository = movementRepository;
+        this.strategyFactory = strategyFactory;
+        this.restockStatusResolver = restockStatusResolver;
     }
 
-    // Returns inventory rows for all items.
-    public List<InventoryRow> getInventoryRows() {
-        List<Item> items = itemRepository.findByActiveTrue();
-        List<InventoryRow> rows = new ArrayList<>();
-
-        for (Item item : items) {
-            rows.add(calculateInventoryForItem(item));
-        }
-
-        return rows;
-    }
-
-    // Returns inventory row for one item.
-    public InventoryRow getInventoryForItem(Long itemId) {
-        Item item = itemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
-
-        return calculateInventoryForItem(item);
-    }
-
-    // Returns only rows that need restocking.
-    public List<InventoryRow> getInventoryAlerts() {
-        return getInventoryRows()
+    public List<InventoryResponse> getInventory() {
+        return itemRepository.findByActiveTrue()
                 .stream()
-                .filter(row -> !row.restockStatus().equals("OK"))
+                .map(this::buildInventoryResponse)
                 .toList();
     }
 
-    // Calculates inventory numbers for one item.
-    private InventoryRow calculateInventoryForItem(Item item) {
-        List<StockMovement> movements = movementRepository.findByItemId(item.getId());
+    public List<InventoryResponse> getInventoryAlerts() {
+        return getInventory()
+                .stream()
+                .filter(response -> response.restockStatus() != RestockStatus.OK)
+                .toList();
+    }
 
-        int localStock = 0;
-        int fulfillmentStock = 0;
+    public InventoryResponse getInventoryByItemId(Long itemId) {
+        Item item = itemRepository.findById(itemId)
+                .orElseThrow(() -> new RuntimeException("Item not found"));
 
-        for (StockMovement movement : movements) {
-            int quantity = movement.getQuantity();
+        return buildInventoryResponse(item);
+    }
 
-            if (movement.getMovementType() == MovementType.ADDED) {
-                localStock += quantity;
-            }
+    private InventoryResponse buildInventoryResponse(Item item) {
+        InventorySnapshot snapshot = calculateSnapshot(item);
 
-            if (movement.getMovementType() == MovementType.SALE) {
-                fulfillmentStock -= quantity;
-            }
+        RestockStatus restockStatus = restockStatusResolver.resolve(snapshot);
 
-            if (movement.getMovementType() == MovementType.TRANSFER_TO_FULFILLMENT) {
-                localStock -= quantity;
-                fulfillmentStock += quantity;
-            }
+        int recommendedTransfer = calculateRecommendedTransferToFulfillment(snapshot);
 
-            if (movement.getMovementType() == MovementType.RETURN_FROM_FULFILLMENT) {
-                localStock += quantity;
-                fulfillmentStock -= quantity;
-            }
-
-            if (movement.getMovementType() == MovementType.ADJUSTMENT) {
-                if (movement.getLocation() == StockLocation.LOCAL) {
-                    localStock += quantity;
-                }
-
-                if (movement.getLocation() == StockLocation.FULFILLMENT) {
-                    fulfillmentStock += quantity;
-                }
-            }
-        }
-
-        String restockStatus = calculateRestockStatus(item, localStock, fulfillmentStock);
-        int recommendedTransfer = calculateRecommendedTransfer(item, localStock, fulfillmentStock);
-
-        return new InventoryRow(
+        return new InventoryResponse(
                 item.getId(),
                 item.getItemName(),
                 item.getProductCategory().getId(),
                 item.getProductCategory().getName(),
                 item.getVariation(),
-                localStock,
-                fulfillmentStock,
+                snapshot.localStock(),
+                snapshot.fulfillmentStock(),
                 item.getLocalMinStock(),
                 item.getFulfillmentMinStock(),
                 item.getFulfillmentTargetStock(),
@@ -111,29 +74,27 @@ public class InventoryService {
         );
     }
 
-    // Calculates restock status based on minimum stock settings.
-    private String calculateRestockStatus(Item item, int localStock, int fulfillmentStock) {
-        boolean localLow = localStock < item.getLocalMinStock();
-        boolean fulfillmentLow = fulfillmentStock < item.getFulfillmentMinStock();
+    private InventorySnapshot calculateSnapshot(Item item) {
+        List<StockMovement> movements = movementRepository.findByItemId(item.getId());
 
-        if (localLow && fulfillmentLow) {
-            return "RESTOCK_BOTH";
+        int localStock = 0;
+        int fulfillmentStock = 0;
+
+        for (StockMovement movement : movements) {
+            StockMovementStrategy strategy = strategyFactory.getStrategy(movement.getMovementType());
+            StockEffect effect = strategy.calculateEffect(movement);
+
+            localStock += effect.localChange();
+            fulfillmentStock += effect.fulfillmentChange();
         }
 
-        if (fulfillmentLow) {
-            return "FULFILLMENT_RESTOCK";
-        }
-
-        if (localLow) {
-            return "LOCAL_RESTOCK";
-        }
-
-        return "OK";
+        return new InventorySnapshot(item, localStock, fulfillmentStock);
     }
 
-    // Calculates how much should be transferred to fulfillment.
-    private int calculateRecommendedTransfer(Item item, int localStock, int fulfillmentStock) {
-        int neededForTarget = item.getFulfillmentTargetStock() - fulfillmentStock;
-        return Math.max(0, Math.min(localStock, neededForTarget));
+    private int calculateRecommendedTransferToFulfillment(InventorySnapshot snapshot) {
+        int neededToReachTarget =
+                snapshot.item().getFulfillmentTargetStock() - snapshot.fulfillmentStock();
+
+        return Math.max(0, Math.min(snapshot.localStock(), neededToReachTarget));
     }
 }
